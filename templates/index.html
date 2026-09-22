@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keystroke Dynamics Biometric Authentication</title>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css?v=2">
+</head>
+<body>
+
+  <!-- Top App Navigation & Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-section">
+        <div class="shield-badge">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">Keystroke Dynamics AI</h1>
+          <p class="brand-subtitle">Behavioral Biometric Verification & Identification (Aalto 136M Dataset)</p>
+        </div>
+      </div>
+
+      <div class="header-status">
+        <div class="status-indicator">
+          <span class="status-dot"></span>
+          <span class="status-text" id="systemStatus">Models Active (PyTorch)</span>
+        </div>
+        <div class="active-profile-tag" id="headerProfileTag">
+          Profile: <span id="currentProfileName">Loading...</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-wrapper">
+
+    <!-- Responsive Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="tab-verify">
+        <span class="tab-icon">🔐</span>
+        <span class="tab-text">1:1 Verification</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-enroll">
+        <span class="tab-icon">👤</span>
+        <span class="tab-text">Live Enrollment (5-10 Samples)</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-identify">
+        <span class="tab-icon">🔍</span>
+        <span class="tab-text">1:N Identification (Top-5)</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-benchmarks">
+        <span class="tab-icon">📊</span>
+        <span class="tab-text">Model Architecture</span>
+      </button>
+    </nav>
+
+    <!-- ===================================================================== -->
+    <!-- TAB 1: 1:1 BIOMETRIC VERIFICATION (SIAMESE LSTM)                     -->
+    <!-- ===================================================================== -->
+    <section class="tab-content active" id="tab-verify">
+      <div class="grid-2col">
+
+        <!-- Left Column: Keystroke Input & Controls -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Live Biometric Test Console</h2>
+              <p class="card-desc">Type the prompt sentence or free text in your natural rhythm to verify your identity.</p>
+            </div>
+            <span class="badge badge-cyan">Siamese LSTM</span>
+          </div>
+
+          <!-- Target Profile Selector -->
+          <div class="form-group">
+            <label class="form-label" for="verifyProfileSelect">Target Reference Profile:</label>
+            <div class="select-wrapper">
+              <select id="verifyProfileSelect" class="form-select"></select>
+            </div>
+            <p class="form-help">The test sample's 32-dim embedding is compared directly against this profile's centroid.</p>
+          </div>
+
+          <!-- Prompt Selection -->
+          <div class="prompt-box">
+            <div class="prompt-label-row">
+              <span class="prompt-title">Prompt Phrase to Type:</span>
+              <button type="button" class="btn-text" id="changePromptBtn">New Random Phrase 🎲</button>
+            </div>
+            <div class="prompt-text" id="promptDisplay">the quick brown fox jumps over the lazy dog</div>
+          </div>
+
+          <!-- Typing Area -->
+          <div class="form-group">
+            <div class="input-header">
+              <label class="form-label" for="verifyInput">Typing Area (Live Millisecond Capture):</label>
+              <span class="key-count" id="verifyKeyCount">0 keys captured</span>
+            </div>
+            <div class="typing-container">
+              <textarea id="verifyInput" class="typing-textarea" placeholder="Click here and type at your natural pace..." rows="3" spellcheck="false" autocomplete="off" autocorrect="off"></textarea>
+              <div class="cadence-visualizer" id="cadenceBar"></div>
+            </div>
+          </div>
+
+          <!-- Keystroke Telemetry HUD -->
+          <div class="telemetry-grid">
+            <div class="telemetry-item">
+              <span class="telemetry-label">Mean Hold Time (H)</span>
+              <span class="telemetry-value" id="hudHoldTime">-- ms</span>
+            </div>
+            <div class="telemetry-item">
+              <span class="telemetry-label">Mean Flight Time (UD)</span>
+              <span class="telemetry-value" id="hudFlightTime">-- ms</span>
+            </div>
+            <div class="telemetry-item">
+              <span class="telemetry-label">Typing Speed</span>
+              <span class="telemetry-value" id="hudWpm">-- WPM</span>
+            </div>
+            <div class="telemetry-item">
+              <span class="telemetry-label">Cadence Status</span>
+              <span class="telemetry-value text-emerald" id="hudCadence">Ready</span>
+            </div>
+          </div>
+
+          <!-- Threshold Slider -->
+          <div class="form-group threshold-control">
+            <div class="threshold-label-row">
+              <label class="form-label" for="thresholdSlider">
+                Decision Threshold (τ): <span id="thresholdVal">0.75</span>
+              </label>
+              <span class="text-muted text-xs">Equal Error Rate (EER) default: 0.75</span>
+            </div>
+            <input type="range" id="thresholdSlider" min="0.40" max="1.30" step="0.05" value="0.75" class="range-slider">
+            <div class="slider-scale">
+              <span>Strict (0.40)</span>
+              <span>Balanced (0.75)</span>
+              <span>Lenient (1.30)</span>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="btn-group">
+            <button class="btn btn-primary" id="btnVerify" disabled>
+              <span class="btn-icon">⚡</span> Verify Biometric Rhythm
+            </button>
+            <button class="btn btn-secondary" id="btnClearVerify">Clear</button>
+          </div>
+        </div>
+
+        <!-- Right Column: Verification Result Card -->
+        <div class="card result-card" id="verificationResultCard">
+          <div class="card-header">
+            <h2 class="card-title">Authentication Result</h2>
+            <span class="badge badge-neutral" id="resultStatusBadge">Awaiting Input</span>
+          </div>
+
+          <!-- Giant Biometric Verdict Display -->
+          <div class="verdict-banner" id="verdictBanner">
+            <div class="verdict-icon" id="verdictIcon">⌨️</div>
+            <div class="verdict-title" id="verdictTitle">Type & Verify</div>
+            <div class="verdict-desc" id="verdictDesc">Type at least 10 keystrokes on the left console to evaluate biometric timing features.</div>
+          </div>
+
+          <!-- Metrics Container -->
+          <div class="metrics-container" id="metricsContainer" style="display: none;">
+            <!-- Confidence & Distance Meters -->
+            <div class="metric-row">
+              <div class="metric-block">
+                <span class="metric-block-label">Euclidean Distance (d)</span>
+                <div class="metric-number-row">
+                  <span class="metric-big-number" id="metricDistance">--</span>
+                  <span class="metric-target" id="metricThresholdTag">vs threshold --</span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill" id="distanceProgress"></div>
+                </div>
+              </div>
+
+              <div class="metric-block">
+                <span class="metric-block-label">Match Similarity Score</span>
+                <div class="metric-number-row">
+                  <span class="metric-big-number" id="metricSimilarity">--%</span>
+                  <span class="metric-target">Biometric Confidence</span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill fill-emerald" id="similarityProgress"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Detailed Rhythm Statistics -->
+            <div class="stats-table-box">
+              <h3 class="box-subtitle">Sample Timing Breakdown</h3>
+              <div class="stats-table">
+                <div class="stats-row">
+                  <span>Keystrokes Evaluated:</span>
+                  <strong id="statCount">--</strong>
+                </div>
+                <div class="stats-row">
+                  <span>Average Hold / Dwell Time (H):</span>
+                  <strong id="statHold">-- ms</strong>
+                </div>
+                <div class="stats-row">
+                  <span>Average Flight / Digraph Latency (UD):</span>
+                  <strong id="statFlight">-- ms</strong>
+                </div>
+                <div class="stats-row">
+                  <span>Typing Speed:</span>
+                  <strong id="statWpm">-- WPM</strong>
+                </div>
+                <div class="stats-row">
+                  <span>Target Profile:</span>
+                  <strong id="statProfile">--</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Decision Rule Explanation -->
+            <div class="info-alert" id="decisionAlert">
+              <strong>Decision Logic:</strong> If Euclidean distance d &lt; τ (threshold), identity is verified as genuine; otherwise rejected as an impostor attempt.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===================================================================== -->
+    <!-- TAB 2: LIVE USER ENROLLMENT (5-10 SAMPLES)                           -->
+    <!-- ===================================================================== -->
+    <section class="tab-content" id="tab-enroll">
+      <div class="grid-2col">
+
+        <!-- Enrollment Form & Capture -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Enroll New User Profile</h2>
+              <p class="card-desc">Record 5 to 10 typed samples to compute your baseline behavioral centroid embedding.</p>
+            </div>
+            <span class="badge badge-emerald">One-Shot Learning</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="enrollName">User Name or ID:</label>
+            <input type="text" id="enrollName" class="form-input" placeholder="e.g. Muhammad / User 1" value="Muhammad">
+          </div>
+
+          <!-- Sample Counter Stepper -->
+          <div class="stepper-box">
+            <div class="stepper-header">
+              <span class="stepper-title">Enrollment Progress:</span>
+              <span class="stepper-count" id="sampleCountLabel">0 of 5 Samples</span>
+            </div>
+            <div class="stepper-track" id="stepperDots">
+              <span class="step-dot" data-step="1">1</span>
+              <span class="step-dot" data-step="2">2</span>
+              <span class="step-dot" data-step="3">3</span>
+              <span class="step-dot" data-step="4">4</span>
+              <span class="step-dot" data-step="5">5</span>
+            </div>
+          </div>
+
+          <!-- Sentence to Type -->
+          <div class="prompt-box">
+            <span class="prompt-title">Enrollment Sentence (Keep typing this phrase):</span>
+            <div class="prompt-text" id="enrollPromptText">the quick brown fox jumps over the lazy dog</div>
+          </div>
+
+          <!-- Typing Box for Enrollment -->
+          <div class="form-group">
+            <div class="input-header">
+              <label class="form-label" for="enrollInput">Type Current Sample:</label>
+              <span class="key-count" id="enrollKeyCount">0 keys captured</span>
+            </div>
+            <textarea id="enrollInput" class="typing-textarea" placeholder="Type the sentence above in your standard rhythm..." rows="3" spellcheck="false"></textarea>
+          </div>
+
+          <div class="btn-group">
+            <button class="btn btn-emerald" id="btnRecordSample" disabled>
+              <span class="btn-icon">✓</span> Record Sample
+            </button>
+            <button class="btn btn-secondary" id="btnResetEnroll">Reset All Samples</button>
+          </div>
+        </div>
+
+        <!-- Enrollment Summary & Samples Recorded -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Recorded Samples & Profile Status</h2>
+            <span class="badge badge-neutral" id="enrollStatusBadge">0 Recorded</span>
+          </div>
+
+          <div class="sample-list-container" id="samplesListContainer">
+            <div class="empty-state" id="emptyEnrollState">
+              <div class="empty-icon">📝</div>
+              <p>No samples recorded yet. Type the phrase on the left and click "Record Sample".</p>
+            </div>
+            <div class="sample-items" id="sampleItems"></div>
+          </div>
+
+          <div class="enroll-action-footer" id="enrollActionFooter" style="display: none;">
+            <div class="info-alert">
+              <strong>Ready to register:</strong> 5 samples recorded. Click below to compute your 32-dimensional Siamese centroid!
+            </div>
+            <button class="btn btn-primary btn-full" id="btnSaveProfile">
+              🚀 Save Profile & Set as Active Target
+            </button>
+          </div>
+
+          <!-- Post-enrollment Success Card -->
+          <div class="enroll-success-box" id="enrollSuccessBox" style="display: none;">
+            <div class="success-icon">🎉</div>
+            <h3 class="success-title">Profile Enrolled Successfully!</h3>
+            <p class="success-desc">Centroid embedding generated. You can now switch to the <strong>1:1 Verification</strong> tab to test against yourself or have an impostor test it.</p>
+            <button class="btn btn-primary" id="btnGoToVerify">Go to Live Verification →</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===================================================================== -->
+    <!-- TAB 3: 1:N IDENTIFICATION (TOP-5 GUESSES)                              -->
+    <!-- ===================================================================== -->
+    <section class="tab-content" id="tab-identify">
+      <div class="grid-2col">
+
+        <!-- Input Console -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">1:N Identification Console</h2>
+              <p class="card-desc">Type any sentence to classify identity across 300 registered users.</p>
+            </div>
+            <span class="badge badge-purple">300 Users</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="identifyInput">Type any sentence or sample:</label>
+            <textarea id="identifyInput" class="typing-textarea" placeholder="Type anything here (e.g. hello world, password test, or natural sentence)..." rows="3" spellcheck="false"></textarea>
+            <div class="input-meta">
+              <span class="key-count" id="identifyKeyCount">0 keys captured</span>
+              <span class="text-xs text-muted">Feeds to both Transformer & Bi-LSTM</span>
+            </div>
+          </div>
+
+          <div class="btn-group">
+            <button class="btn btn-purple" id="btnIdentify" disabled>
+              <span class="btn-icon">🎯</span> Predict User Identity (Top-5)
+            </button>
+            <button class="btn btn-secondary" id="btnClearIdentify">Clear</button>
+          </div>
+
+          <div class="benchmark-pill-row">
+            <span class="pill-label">Registered Classes:</span>
+            <span class="stat-pill">300 Profiles</span>
+            <span class="stat-pill">Sequence Length: 15</span>
+          </div>
+        </div>
+
+        <!-- Top-5 Results Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Identification Predictions</h2>
+            <span class="badge badge-neutral" id="identifyStatusBadge">Ready</span>
+          </div>
+
+          <div id="identifyResultsWrapper">
+            <div class="empty-state" id="emptyIdentifyState">
+              <div class="empty-icon">🔎</div>
+              <p>Type keystrokes on the left and click "Predict User Identity" to see the top-5 candidate profiles.</p>
+            </div>
+
+            <!-- Results Grid for Transformer vs LSTM -->
+            <div class="results-columns" id="resultsColumns" style="display: none;">
+              <!-- Transformer Column -->
+              <div class="model-pred-column">
+                <div class="pred-header">
+                  <div class="pred-title">Transformer Encoder</div>
+                  <span class="badge badge-cyan">Top-1 Acc: 51.3%</span>
+                </div>
+                <div class="ranking-list" id="transformerTop5List"></div>
+              </div>
+
+              <!-- LSTM Column -->
+              <div class="model-pred-column">
+                <div class="pred-header">
+                  <div class="pred-title">Bidirectional LSTM</div>
+                  <span class="badge badge-purple">Top-1 Acc: 36.2%</span>
+                </div>
+                <div class="ranking-list" id="lstmTop5List"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===================================================================== -->
+    <!-- TAB 4: BENCHMARKS & DYNAMICS ARCHITECTURE                             -->
+    <!-- ===================================================================== -->
+    <section class="tab-content" id="tab-benchmarks">
+      <div class="grid-2col">
+
+        <!-- Architecture Specs -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Trained Model Checkpoints & Specs</h2>
+            <span class="badge badge-emerald">Aalto 136M Keystrokes</span>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Task</th>
+                  <th>Input / Seq</th>
+                  <th>Core Architecture</th>
+                  <th>Metric / Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Siamese LSTM</strong></td>
+                  <td>1:1 Verification</td>
+                  <td>3 feats &bull; L=50</td>
+                  <td>LSTM(128) &rarr; Linear(32)</td>
+                  <td><span class="score-badge score-emerald">EER 0.2336 (76.7%)</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Transformer Encoder</strong></td>
+                  <td>1:N Identification</td>
+                  <td>3 feats &bull; L=15</td>
+                  <td>PosEnc &rarr; 2x EncLayer(64) &rarr; FC(300)</td>
+                  <td><span class="score-badge score-cyan">Top-1: 51.25%</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Bi-directional LSTM</strong></td>
+                  <td>1:N Identification</td>
+                  <td>3 feats &bull; L=15</td>
+                  <td>BiLSTM(128) &rarr; Drop &rarr; FC(300)</td>
+                  <td><span class="score-badge score-purple">Top-1: 36.22%</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="note-box">
+            <p><strong>Verification vs Identification:</strong> Verification (Siamese) requires no model retraining to enroll new users. A user types 5–10 samples and their 32-dimensional embedding centroid is computed. Identification maps sequences to fixed pre-trained class distributions.</p>
+          </div>
+        </div>
+
+        <!-- Keystroke Features Diagram -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Temporal Feature Pipeline</h2>
+            <span class="badge badge-cyan">Milliseconds (ms)</span>
+          </div>
+
+          <div class="features-breakdown">
+            <div class="feature-card">
+              <div class="feature-head">
+                <span class="feature-name">Hold Time (H)</span>
+                <span class="feature-symbol">Dwell Time</span>
+              </div>
+              <div class="feature-formula">Hold Time = Release Time(i) − Press Time(i)</div>
+              <p class="feature-desc">How long the key was held down. Indicates individual key stroke duration and finger pressure.</p>
+            </div>
+
+            <div class="feature-card">
+              <div class="feature-head">
+                <span class="feature-name">Down-Down Time (DD)</span>
+                <span class="feature-symbol">Digraph Latency</span>
+              </div>
+              <div class="feature-formula">Down-Down Time = Press Time(i) − Press Time(i − 1)</div>
+              <p class="feature-desc">Time between two consecutive key presses. Measures transition rhythm between key pairs.</p>
+            </div>
+
+            <div class="feature-card">
+              <div class="feature-head">
+                <span class="feature-name">Up-Down Time (UD)</span>
+                <span class="feature-symbol">Flight Time</span>
+              </div>
+              <div class="feature-formula">Up-Down Time = Press Time(i) − Release Time(i − 1)</div>
+              <p class="feature-desc">Gap between releasing previous key and pressing current key. Can be negative for roll-over typing.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/js/app.js?v=2"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.git
+.gitignore
+.dockerignore
+*.zip
+*.ipynb
+inspect.ps1
+inspect_pickles.py
+search_outputs.ps1
+check_env.py
+test_backend.py
