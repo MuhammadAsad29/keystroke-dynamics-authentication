@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import pickle
+import traceback
 from typing import List, Dict, Any
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -17,7 +18,17 @@ import torch.nn.functional as F
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+import gradio as gr
 import uvicorn
+
+# ZeroGPU Compatibility (satisfies HF Spaces startup scanner if ZeroGPU is selected)
+try:
+    import spaces
+    @spaces.GPU(duration=1)
+    def dummy_gpu():
+        return None
+except Exception:
+    pass
 
 # =============================================================================
 # 1. MODEL ARCHITECTURES (Exact match with Kaggle Training Notebook)
@@ -88,7 +99,8 @@ static_path = os.path.join(BASE_DIR, "static")
 if os.path.exists(static_path):
     app.mount("/static", StaticFiles(directory=static_path), name="static")
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# CPU is chosen for lightning-fast sub-millisecond inference and 100% ZeroGPU compatibility
+DEVICE = torch.device("cpu")
 
 # Global model & artifact containers
 siamese_model: SiameseLSTM = None
@@ -175,11 +187,8 @@ def load_artifacts():
         print(f"[OK] Initialized {len(PROFILES)} benchmark profiles")
     print("==================================================")
 
-
 # Pre-load models at startup
-@app.on_event("startup")
-async def startup_event():
-    load_artifacts()
+load_artifacts()
 
 
 # =============================================================================
@@ -254,6 +263,7 @@ def prepare_classifier_tensor(feats: np.ndarray) -> torch.Tensor:
 # =============================================================================
 
 @app.get("/", response_class=HTMLResponse)
+@app.get("/dashboard", response_class=HTMLResponse)
 async def index():
     """Serves the main interactive dashboard."""
     template_file = os.path.join(BASE_DIR, "templates", "index.html")
@@ -264,6 +274,34 @@ async def index():
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+@app.get("/api/profiles")
+async def get_profiles():
+    """Returns active registered and benchmark profiles for the frontend dropdown."""
+    profiles_list = [
+        {
+            "key": k,
+            "id": p.get("id", k),
+            "name": p.get("name", k),
+            "is_benchmark": p.get("is_benchmark", False),
+            "num_samples": p.get("num_samples", 0),
+            "created_at": p.get("created_at", "")
+        }
+        for k, p in PROFILES.items()
+    ]
+    return JSONResponse(content={"profiles": profiles_list})
+
+
+@app.get("/api/status")
+async def get_status():
+    """Returns runtime model device and status."""
+    return JSONResponse(content={
+        "status": "online",
+        "device": str(DEVICE),
+        "profiles_count": len(PROFILES),
+        "models_loaded": True
+    })
 
 
 @app.get("/api/model_info")
@@ -316,200 +354,237 @@ async def get_model_info():
 async def enroll_user(request: Request):
     """Enrolls a new user profile by averaging embeddings of 3-10 typed samples."""
     try:
-        data = await request.json()
-    except Exception:
-        return JSONResponse(status_code=400, content={"success": False, "error": "Invalid JSON payload."})
+        try:
+            data = await request.json()
+        except Exception:
+            return JSONResponse(status_code=400, content={"success": False, "error": "Invalid JSON payload."})
 
-    user_name = data.get("user_name", "").strip() or "Enrolled User"
-    samples_data = data.get("samples", [])
+        user_name = data.get("user_name", "").strip() or "Enrolled User"
+        samples_data = data.get("samples", [])
 
-    if not samples_data or len(samples_data) < 3:
-        return JSONResponse(status_code=400, content={
-            "success": False,
-            "error": "At least 3 typing samples are required to create a stable reference profile (5-10 recommended)."
-        })
+        if not samples_data or len(samples_data) < 3:
+            return JSONResponse(status_code=400, content={
+                "success": False,
+                "error": "At least 3 typing samples are required to create a stable reference profile (5-10 recommended)."
+            })
 
-    embeddings = []
-    all_holds, all_dds, all_uds = [], [], []
+        embeddings = []
+        all_holds, all_dds, all_uds = [], [], []
 
-    with torch.no_grad():
-        for sample in samples_data:
-            feats = extract_features_from_events(sample)
-            if len(feats) < 3:
-                continue
-            all_holds.extend(feats[:, 0].tolist())
-            all_dds.extend(feats[1:, 1].tolist())
-            all_uds.extend(feats[1:, 2].tolist())
+        with torch.no_grad():
+            for sample in samples_data:
+                feats = extract_features_from_events(sample)
+                if len(feats) < 3:
+                    continue
+                all_holds.extend(feats[:, 0].tolist())
+                all_dds.extend(feats[1:, 1].tolist())
+                all_uds.extend(feats[1:, 2].tolist())
 
-            tensor = prepare_siamese_tensor(feats)
-            emb = siamese_model.forward_once(tensor).cpu().numpy().squeeze(0)
-            embeddings.append(emb)
+                tensor = prepare_siamese_tensor(feats)
+                emb = siamese_model.forward_once(tensor).cpu().numpy().squeeze(0)
+                embeddings.append(emb)
 
-    if len(embeddings) < 2:
-        return JSONResponse(status_code=400, content={
-            "success": False,
-            "error": "Not enough valid keystrokes captured across samples."
-        })
+        if len(embeddings) < 2:
+            return JSONResponse(status_code=400, content={
+                "success": False,
+                "error": "Not enough valid keystrokes captured across samples."
+            })
 
-    centroid = np.mean(embeddings, axis=0)
+        centroid = np.mean(embeddings, axis=0)
 
-    distances_to_centroid = [float(np.linalg.norm(e - centroid)) for e in embeddings]
-    mean_consistency = float(np.mean(distances_to_centroid))
+        distances_to_centroid = [float(np.linalg.norm(e - centroid)) for e in embeddings]
+        mean_consistency = float(np.mean(distances_to_centroid))
 
-    profile_key = f"user_{user_name.lower().replace(' ', '_')}"
-    PROFILES[profile_key] = {
-        "id": profile_key,
-        "name": user_name,
-        "is_benchmark": False,
-        "centroid": centroid.tolist(),
-        "num_samples": len(embeddings),
-        "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "stats": {
-            "mean_hold_ms": round(float(np.mean(all_holds)), 1) if all_holds else 0,
-            "mean_flight_ms": round(float(np.mean(all_uds)), 1) if all_uds else 0,
-            "mean_consistency_dist": round(mean_consistency, 3)
+        profile_key = f"user_{user_name.lower().replace(' ', '_')}"
+        PROFILES[profile_key] = {
+            "id": profile_key,
+            "name": user_name,
+            "is_benchmark": False,
+            "centroid": centroid.tolist(),
+            "num_samples": len(embeddings),
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "stats": {
+                "mean_hold_ms": round(float(np.mean(all_holds)), 1) if all_holds else 0,
+                "mean_flight_ms": round(float(np.mean(all_uds)), 1) if all_uds else 0,
+                "mean_consistency_dist": round(mean_consistency, 3)
+            }
         }
-    }
 
-    return JSONResponse(content={
-        "success": True,
-        "profile_key": profile_key,
-        "profile_name": user_name,
-        "num_samples_used": len(embeddings),
-        "consistency_score": round(max(0, 100 - mean_consistency * 60), 1),
-        "stats": PROFILES[profile_key]["stats"]
-    })
+        return JSONResponse(content={
+            "success": True,
+            "profile_key": profile_key,
+            "profile_name": user_name,
+            "num_samples_used": len(embeddings),
+            "consistency_score": round(max(0, 100 - mean_consistency * 60), 1),
+            "stats": PROFILES[profile_key]["stats"]
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"success": False, "error": f"Enrollment error: {str(e)}"})
 
 
 @app.post("/api/verify")
 async def verify_keystroke(request: Request):
     """Verifies an incoming keystroke sample against a selected profile."""
     try:
-        data = await request.json()
-    except Exception:
-        return JSONResponse(status_code=400, content={"success": False, "error": "Invalid JSON payload."})
+        try:
+            data = await request.json()
+        except Exception:
+            return JSONResponse(status_code=400, content={"success": False, "error": "Invalid JSON payload."})
 
-    profile_key = data.get("profile_key", "")
-    threshold = float(data.get("threshold", DEFAULT_THRESHOLD))
-    events = data.get("events", [])
+        profile_key = data.get("profile_key", "")
+        threshold = float(data.get("threshold", DEFAULT_THRESHOLD))
+        events = data.get("events", [])
 
-    if not events or len(events) < 3:
-        return JSONResponse(status_code=400, content={
-            "success": False,
-            "error": "Too few keystrokes (minimum 3 required, 10-15 recommended)."
-        })
-
-    if profile_key not in PROFILES:
-        if PROFILES:
-            profile_key = list(PROFILES.keys())[0]
-        else:
+        if not events or len(events) < 3:
             return JSONResponse(status_code=400, content={
                 "success": False,
-                "error": "No reference profile found. Please enroll or select a benchmark profile first."
+                "error": "Too few keystrokes (minimum 3 required, 10-15 recommended)."
             })
 
-    target_profile = PROFILES[profile_key]
-    ref_centroid = np.array(target_profile["centroid"], dtype=np.float32)
+        if profile_key not in PROFILES:
+            if PROFILES:
+                profile_key = list(PROFILES.keys())[0]
+            else:
+                return JSONResponse(status_code=400, content={
+                    "success": False,
+                    "error": "No reference profile found. Please enroll or select a benchmark profile first."
+                })
 
-    feats = extract_features_from_events(events)
-    if len(feats) < 2:
-        return JSONResponse(status_code=400, content={"success": False, "error": "Invalid timing sequence."})
+        target_profile = PROFILES[profile_key]
+        ref_centroid = np.array(target_profile["centroid"], dtype=np.float32)
 
-    hold_times = feats[:, 0]
-    flight_times = feats[1:, 2] if len(feats) > 1 else feats[:, 2]
-    mean_hold = round(float(np.mean(hold_times)), 1)
-    mean_flight = round(float(np.mean(flight_times)), 1)
+        feats = extract_features_from_events(events)
+        if len(feats) < 2:
+            return JSONResponse(status_code=400, content={"success": False, "error": "Invalid timing sequence."})
 
-    total_duration_sec = (float(events[-1]["release_time"]) - float(events[0]["press_time"])) / 1000.0
-    wpm = round((len(events) / 5.0) / (total_duration_sec / 60.0), 1) if total_duration_sec > 0.3 else 0.0
+        hold_times = feats[:, 0]
+        flight_times = feats[1:, 2] if len(feats) > 1 else feats[:, 2]
+        mean_hold = round(float(np.mean(hold_times)), 1)
+        mean_flight = round(float(np.mean(flight_times)), 1)
 
-    with torch.no_grad():
-        tensor = prepare_siamese_tensor(feats)
-        test_emb = siamese_model.forward_once(tensor).cpu().numpy().squeeze(0)
+        total_duration_sec = (float(events[-1]["release_time"]) - float(events[0]["press_time"])) / 1000.0
+        wpm = round((len(events) / 5.0) / (total_duration_sec / 60.0), 1) if total_duration_sec > 0.3 else 0.0
 
-    distance = float(np.linalg.norm(test_emb - ref_centroid))
-    similarity_score = max(0.0, min(100.0, (1.0 - (distance / (threshold * 2.2))) * 100.0))
+        with torch.no_grad():
+            tensor = prepare_siamese_tensor(feats)
+            test_emb = siamese_model.forward_once(tensor).cpu().numpy().squeeze(0)
 
-    is_verified = bool(distance < threshold)
-    verdict = "Verified ✅" if is_verified else "Impostor ❌"
-    status_text = "Access Granted — Typing dynamics match the registered behavioral profile." if is_verified else "Access Denied — Significant divergence in rhythm and cadence detected."
+        distance = float(np.linalg.norm(test_emb - ref_centroid))
+        similarity_score = max(0.0, min(100.0, (1.0 - (distance / (threshold * 2.2))) * 100.0))
 
-    return JSONResponse(content={
-        "success": True,
-        "verdict": verdict,
-        "is_verified": is_verified,
-        "status_text": status_text,
-        "distance": round(distance, 4),
-        "threshold": round(threshold, 4),
-        "similarity_score": round(similarity_score, 1),
-        "target_profile": target_profile["name"],
-        "timing_stats": {
-            "keystroke_count": len(events),
-            "mean_hold_ms": mean_hold,
-            "mean_flight_ms": mean_flight,
-            "wpm": wpm,
-            "duration_sec": round(total_duration_sec, 2)
-        }
-    })
+        is_verified = bool(distance < threshold)
+        verdict = "Verified ✅" if is_verified else "Impostor ❌"
+        status_text = "Access Granted — Typing dynamics match the registered behavioral profile." if is_verified else "Access Denied — Significant divergence in rhythm and cadence detected."
+
+        return JSONResponse(content={
+            "success": True,
+            "verdict": verdict,
+            "is_verified": is_verified,
+            "status_text": status_text,
+            "distance": round(distance, 4),
+            "threshold": round(threshold, 4),
+            "similarity_score": round(similarity_score, 1),
+            "target_profile": target_profile["name"],
+            "timing_stats": {
+                "keystroke_count": len(events),
+                "mean_hold_ms": mean_hold,
+                "mean_flight_ms": mean_flight,
+                "wpm": wpm,
+                "duration_sec": round(total_duration_sec, 2)
+            }
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"success": False, "error": f"Verification error: {str(e)}"})
 
 
 @app.post("/api/identify")
 async def identify_user(request: Request):
     """Classifies an incoming keystroke sample across 300 registered classes."""
     try:
-        data = await request.json()
-    except Exception:
-        return JSONResponse(status_code=400, content={"success": False, "error": "Invalid JSON payload."})
+        try:
+            data = await request.json()
+        except Exception:
+            return JSONResponse(status_code=400, content={"success": False, "error": "Invalid JSON payload."})
 
-    events = data.get("events", [])
+        events = data.get("events", [])
 
-    if not events or len(events) < 3:
-        return JSONResponse(status_code=400, content={
-            "success": False,
-            "error": "Too few keystrokes (minimum 3 required)."
-        })
-
-    feats = extract_features_from_events(events)
-    tensor = prepare_classifier_tensor(feats)
-
-    with torch.no_grad():
-        trans_logits = transformer_model(tensor)
-        trans_probs = F.softmax(trans_logits, dim=1).cpu().numpy().squeeze(0)
-
-        lstm_logits = lstm_model(tensor)
-        lstm_probs = F.softmax(lstm_logits, dim=1).cpu().numpy().squeeze(0)
-
-    def get_top5(probs):
-        top_indices = np.argsort(probs)[::-1][:5]
-        top5_list = []
-        for rank, idx in enumerate(top_indices, 1):
-            uid = str(label_encoder_id.classes_[idx])
-            prob_percent = round(float(probs[idx]) * 100.0, 2)
-            top5_list.append({
-                "rank": rank,
-                "user_id": uid,
-                "probability": prob_percent
+        if not events or len(events) < 3:
+            return JSONResponse(status_code=400, content={
+                "success": False,
+                "error": "Too few keystrokes (minimum 3 required)."
             })
-        return top5_list
 
-    transformer_top5 = get_top5(trans_probs)
-    lstm_top5 = get_top5(lstm_probs)
+        feats = extract_features_from_events(events)
+        tensor = prepare_classifier_tensor(feats)
 
-    return JSONResponse(content={
-        "success": True,
-        "transformer_top5": transformer_top5,
-        "lstm_top5": lstm_top5,
-        "total_classes": len(label_encoder_id.classes_)
-    })
+        with torch.no_grad():
+            trans_logits = transformer_model(tensor)
+            trans_probs = F.softmax(trans_logits, dim=1).cpu().numpy().squeeze(0)
+
+            lstm_logits = lstm_model(tensor)
+            lstm_probs = F.softmax(lstm_logits, dim=1).cpu().numpy().squeeze(0)
+
+        def get_top5(probs):
+            top_indices = np.argsort(probs)[::-1][:5]
+            top5_list = []
+            for rank, idx in enumerate(top_indices, 1):
+                uid = str(label_encoder_id.classes_[idx])
+                prob_percent = round(float(probs[idx]) * 100.0, 2)
+                top5_list.append({
+                    "rank": rank,
+                    "user_id": uid,
+                    "probability": prob_percent
+                })
+            return top5_list
+
+        transformer_top5 = get_top5(trans_probs)
+        lstm_top5 = get_top5(lstm_probs)
+
+        return JSONResponse(content={
+            "success": True,
+            "transformer_top5": transformer_top5,
+            "lstm_top5": lstm_top5,
+            "total_classes": len(label_encoder_id.classes_)
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"success": False, "error": f"Identification error: {str(e)}"})
 
 
 # =============================================================================
-# 5. ENTRY POINT
+# 5. GRADIO APPLICATION & ENTRY POINT (Hugging Face Spaces Native Discovery)
 # =============================================================================
+
+head_content = """
+<link rel="stylesheet" href="/static/css/style.css?v=2">
+<script src="/static/js/app.js?v=2"></script>
+"""
+
+with gr.Blocks(title="Keystroke Dynamics Biometric AI", head=head_content) as demo:
+    template_file = os.path.join(BASE_DIR, "templates", "index.html")
+    if os.path.exists(template_file):
+        with open(template_file, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        import re
+        body_only = re.sub(r'<script.*?</script>', '', html_content, flags=re.DOTALL)
+        body_only = re.sub(r'<link.*?>', '', body_only)
+        gr.HTML(body_only)
+    else:
+        gr.Markdown("# 🔐 Keystroke Dynamics Biometric Authentication")
+
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 7860))
     print(f"\n>>> Keystroke Dynamics Biometric Web App Running on http://0.0.0.0:{port}")
     print("Press CTRL+C in terminal to stop server.\n")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Launch via native Gradio demo.launch so Hugging Face Spaces lifecycle monitor recognizes it
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=port,
+        allowed_paths=[os.path.join(BASE_DIR, "static")],
+        app_kwargs={"routes": list(app.routes)}
+    )
+

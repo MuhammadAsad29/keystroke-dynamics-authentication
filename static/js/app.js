@@ -386,10 +386,22 @@ document.addEventListener("DOMContentLoaded", () => {
           })
         });
 
-        const result = await response.json();
+        const rawText = await response.text();
+        let result;
+        try {
+          result = JSON.parse(rawText);
+        } catch (parseErr) {
+          throw new Error(rawText || `Server returned HTTP ${response.status}`);
+        }
+
+        if (!response.ok || !result.success) {
+          alert("Verification Notice: " + (result.error || `Server status ${response.status}`));
+          return;
+        }
+
         renderVerificationResult(result);
       } catch (err) {
-        alert("Error connecting to verification server: " + err.message);
+        alert("Verification Error: " + err.message);
       } finally {
         btnVerify.disabled = false;
         btnVerify.innerHTML = `<span class="btn-icon">⚡</span> Verify Biometric Rhythm`;
@@ -586,7 +598,14 @@ document.addEventListener("DOMContentLoaded", () => {
           })
         });
 
-        const data = await response.json();
+        const rawText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch (parseErr) {
+          throw new Error(rawText || `Server returned HTTP ${response.status}`);
+        }
+
         if (data.success) {
           document.getElementById("enrollActionFooter").style.display = "none";
           document.getElementById("enrollSuccessBox").style.display = "flex";
@@ -598,10 +617,10 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById("currentProfileName").textContent = data.profile_name;
           }
         } else {
-          alert("Enrollment failed: " + data.error);
+          alert("Enrollment failed: " + (data.error || "Unknown server error."));
         }
       } catch (err) {
-        alert("Enrollment network error: " + err.message);
+        alert("Enrollment Error: " + err.message);
       } finally {
         btnSaveProfile.disabled = false;
         btnSaveProfile.textContent = "🚀 Save Profile & Set as Active Target";
@@ -637,10 +656,22 @@ document.addEventListener("DOMContentLoaded", () => {
           body: JSON.stringify({ events: events })
         });
 
-        const result = await response.json();
+        const rawText = await response.text();
+        let result;
+        try {
+          result = JSON.parse(rawText);
+        } catch (parseErr) {
+          throw new Error(rawText || `Server returned HTTP ${response.status}`);
+        }
+
+        if (!response.ok || !result.success) {
+          alert("Identification Notice: " + (result.error || `Server status ${response.status}`));
+          return;
+        }
+
         renderIdentificationResults(result);
       } catch (err) {
-        alert("Identification error: " + err.message);
+        alert("Identification Error: " + err.message);
       } finally {
         btnIdentify.disabled = false;
         btnIdentify.innerHTML = `<span class="btn-icon">🎯</span> Predict User Identity (Top-5)`;

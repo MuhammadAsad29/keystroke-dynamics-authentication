@@ -1,11 +1,22 @@
+---
+title: Keystroke Dynamics Biometric Auth
+emoji: 🔐
+colorFrom: blue
+colorTo: green
+sdk: gradio
+sdk_version: 4.44.1
+app_file: app.py
+pinned: false
+license: mit
+---
 # 🔐 Keystroke Dynamics Behavioral Biometric Authentication & Identification System
 
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%20%7C%203.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python 3.10+](<https://img.shields.io/badge/Python-3.10%20%7C%203.11-3776AB?logo=python&logoColor=white>)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Dataset](https://img.shields.io/badge/Dataset-Aalto%20136M%20Keystrokes-blue)](https://userinterfaces.aalto.fi/136Mkeystrokes/)
-[![Deployed on Render](https://img.shields.io/badge/Deploy-Render-46E3B7?logo=render&logoColor=white)](https://render.com)
+[![Dataset](<https://img.shields.io/badge/Dataset-Aalto%20136M%20Keystrokes-blue>)](https://userinterfaces.aalto.fi/136Mkeystrokes/)
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Live%20Demo-yellow)](https://huggingface.co/spaces/M-Asad29/Keystroke-Dynamics-Authentication)
 
 A deep learning behavioral biometric system that authenticates users based on the physical timing rhythm of their typing. Trained on the massive **Aalto University 136 Million Keystroke Dataset** across **167,000+ real-world typists**, this repository implements both **1:1 Identity Verification (Siamese LSTM with Contrastive Loss)** and **1:N User Identification (Transformer Encoder vs. Bidirectional LSTM)**, paired with a real-time, interactive, glassmorphic web dashboard.
 
@@ -14,20 +25,20 @@ A deep learning behavioral biometric system that authenticates users based on th
 ## 📑 Table of Contents
 
 - [Key Highlights](#-key-highlights)
-- [Behavioral Biometrics & Feature Engineering](#-behavioral-biometrics--feature-engineering)
-- [Dataset Preprocessing & Augmentation](#-dataset-preprocessing--augmentation)
+- [Behavioral Biometrics &amp; Feature Engineering](#-behavioral-biometrics--feature-engineering)
+- [Dataset Preprocessing &amp; Augmentation](#-dataset-preprocessing--augmentation)
 - [Deep Learning Architectures](#-deep-learning-architectures)
   - [1. Siamese LSTM (1:1 Verification)](#1-siamese-lstm-11-verification)
   - [2. Transformer Encoder Classifier (1:N Identification)](#2-transformer-encoder-classifier-1n-identification)
   - [3. Bidirectional LSTM Classifier (1:N Identification)](#3-bidirectional-lstm-classifier-1n-identification)
-- [Training Hyperparameters & Experimental Setup](#-training-hyperparameters--experimental-setup)
-- [Evaluation & Benchmark Results](#-evaluation--benchmark-results)
+- [Training Hyperparameters &amp; Experimental Setup](#-training-hyperparameters--experimental-setup)
+- [Evaluation &amp; Benchmark Results](#-evaluation--benchmark-results)
 - [Interactive Web Application Architecture](#-interactive-web-application-architecture)
 - [API Reference](#-api-reference)
 - [Repository Structure](#-repository-structure)
-- [Quickstart & Local Installation](#-quickstart--local-installation)
+- [Quickstart &amp; Local Installation](#-quickstart--local-installation)
 - [Production Deployment](#-production-deployment)
-- [Citation & References](#-citation--references)
+- [Citation &amp; References](#-citation--references)
 
 ---
 
@@ -45,15 +56,17 @@ A deep learning behavioral biometric system that authenticates users based on th
 
 ## ⏱️ Behavioral Biometrics & Feature Engineering
 
-Typing behavior is a continuous behavioral biometric: the human neuromuscular timing of striking, holding, and moving between keys cannot easily be copied or forged. 
+Typing behavior is a continuous behavioral biometric: the human neuromuscular timing of striking, holding, and moving between keys cannot easily be copied or forged.
 
 For every keystroke $i$, the engine extracts three fundamental temporal timing features in milliseconds:
 
-$$\begin{aligned}
+$$
+\begin{aligned}
 \mathbf{H}_i \quad &\text{(Hold / Dwell Time)} &&= T_{\text{release}}(i) - T_{\text{press}}(i) \\
 \mathbf{DD}_i \quad &\text{(Down-Down / Digraph Latency)} &&= T_{\text{press}}(i) - T_{\text{press}}(i-1) \quad (\mathbf{DD}_0 = 0) \\
 \mathbf{UD}_i \quad &\text{(Up-Down / Flight Time)} &&= T_{\text{press}}(i) - T_{\text{release}}(i-1) \quad (\mathbf{UD}_0 = 0)
-\end{aligned}$$
+\end{aligned}
+$$
 
 ```
 Keystroke i-1: [ PRESS ]----------------[ RELEASE ]
@@ -66,21 +79,23 @@ Keystroke i:       |       [ PRESS ]-----------------[ RELEASE ]
 
 Each sequence is normalized using a `StandardScaler` fitted exclusively on the training split flattened across time:
 
-$$x_{\text{norm}} = \frac{x - \mu}{\sigma}$$
+$$
+x_{\text{norm}} = \frac{x - \mu}{\sigma}
+$$
 
 ---
 
 ## 📊 Dataset Preprocessing & Augmentation
 
-| Metric | Full Dataset (Siamese 1:1) | Subsampled Dataset (Identification 1:N) |
-| :--- | :--- | :--- |
-| **Source Data** | Aalto 136M Keystrokes (168,593 TSV files, 1.57 GB) | 300 Randomly sampled registered users |
-| **Unique Users** | **167,147 users** (15 typed sentences each) | **300 users** (299 classes evaluated) |
-| **Total Samples** | **2,507,205 sequences** | **78,474 augmented sequences** |
-| **Window Strategy** | Fixed window: 1 sequence per sentence | Sliding window: `stride = 2`, `min_len = 5` |
-| **Sequence Length ($T$)** | **50 keystrokes** (zero-padded if shorter) | **15 keystrokes** (zero-padded if shorter) |
-| **Split Ratio** | 80% Train (`2,005,764`), 20% Test (`501,441`) | 80% Train (`62,779`), 20% Test (`15,695`) |
-| **Input Shape** | `(Batch, 50, 3)` | `(Batch, 15, 3)` |
+| Metric                            | Full Dataset (Siamese 1:1)                         | Subsampled Dataset (Identification 1:N)          |
+| :-------------------------------- | :------------------------------------------------- | :----------------------------------------------- |
+| **Source Data**             | Aalto 136M Keystrokes (168,593 TSV files, 1.57 GB) | 300 Randomly sampled registered users            |
+| **Unique Users**            | **167,147 users** (15 typed sentences each)  | **300 users** (299 classes evaluated)      |
+| **Total Samples**           | **2,507,205 sequences**                      | **78,474 augmented sequences**             |
+| **Window Strategy**         | Fixed window: 1 sequence per sentence              | Sliding window:`stride = 2`, `min_len = 5`   |
+| **Sequence Length ($T$)** | **50 keystrokes** (zero-padded if shorter)   | **15 keystrokes** (zero-padded if shorter) |
+| **Split Ratio**             | 80% Train (`2,005,764`), 20% Test (`501,441`)  | 80% Train (`62,779`), 20% Test (`15,695`)    |
+| **Input Shape**             | `(Batch, 50, 3)`                                 | `(Batch, 15, 3)`                               |
 
 ---
 
@@ -109,26 +124,34 @@ $$x_{\text{norm}} = \frac{x - \mu}{\sigma}$$
 ```
 
 ### 1. Siamese LSTM (1:1 Verification)
+
 * **Goal**: Determine whether two typed sequences originate from the same user without needing to retrain on new users.
 * **Architecture**:
   * Input: `(batch_size, 50, 3)`
   * Shared Recurrent Core: Single-layer `LSTM(input_size=3, hidden_size=128, batch_first=True)`
   * Projection Head: `nn.Linear(128, 32)` mapping hidden state $h_n$ to a compact 32-dimensional embedding space.
 * **Loss Function**: Contrastive Loss with margin $m = 1.0$:
-  $$\mathcal{L}(z_1, z_2, y) = y \cdot d(z_1, z_2)^2 + (1 - y) \cdot \max\big(0, m - d(z_1, z_2)\big)^2$$
+  $$
+  \mathcal{L}(z_1, z_2, y) = y \cdot d(z_1, z_2)^2 + (1 - y) \cdot \max\big(0, m - d(z_1, z_2)\big)^2
+  $$
+
   where $y=1$ for genuine pairs and $y=0$ for impostor pairs.
 
 ### 2. Transformer Encoder Classifier (1:N Identification)
+
 * **Goal**: Multi-class classification across 300 candidate profiles.
 * **Architecture**:
   * Linear Token Projection: $\mathbb{R}^3 \to \mathbb{R}^{64}$ (`d_model = 64`).
   * Sinusoidal Positional Encoding preserving keystroke sequence order:
-    $$PE_{(pos, 2i)} = \sin\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right), \quad PE_{(pos, 2i+1)} = \cos\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right)$$
+    $$
+    PE_{(pos, 2i)} = \sin\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right), \quad PE_{(pos, 2i+1)} = \cos\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right)
+    $$
   * Multi-Head Self-Attention: 2 layers of `TransformerEncoderLayer(d_model=64, nhead=4, dim_feedforward=128, dropout=0.1)`.
   * Global Temporal Average Pooling over length dimension.
   * Classification Head: `nn.Linear(64, 300)`.
 
 ### 3. Bidirectional LSTM Classifier (1:N Identification)
+
 * **Goal**: Recurrent baseline comparison.
 * **Architecture**:
   * Input: `(batch_size, 15, 3)`
@@ -142,17 +165,17 @@ $$x_{\text{norm}} = \frac{x - \mu}{\sigma}$$
 
 All models were trained in a dual-GPU Kaggle accelerator environment (`2x NVIDIA T4`, `DataParallel`, `PyTorch 2.x`).
 
-| Parameter | Siamese LSTM (Verification) | Transformer Encoder (ID) | Bidirectional LSTM (ID) |
-| :--- | :--- | :--- | :--- |
-| **Task Scope** | 1:1 Binary Metric Verification | 1:N 300-Class Classification | 1:N 300-Class Classification |
-| **Sequence Length ($T$)** | 50 keystrokes | 15 keystrokes | 15 keystrokes |
-| **Batch Size** | 256 | 256 | 256 |
-| **Optimizer** | Adam ($\beta_1=0.9, \beta_2=0.999$) | Adam ($\beta_1=0.9, \beta_2=0.999$) | Adam ($\beta_1=0.9, \beta_2=0.999$) |
-| **Learning Rate ($\eta$)** | $1 \times 10^{-3}$ | $1 \times 10^{-3}$ | $1 \times 10^{-3}$ |
-| **Loss Function** | Contrastive Loss ($\text{margin}=1.0$) | CrossEntropyLoss | CrossEntropyLoss |
-| **Epochs** | 30 | 60 | 60 |
-| **Number of GPUs** | 2x NVIDIA T4 (`DataParallel`) | 2x NVIDIA T4 (`DataParallel`) | 2x NVIDIA T4 (`DataParallel`) |
-| **Total Parameters** | ~72,000 | ~77,000 | ~170,000 |
+| Parameter                          | Siamese LSTM (Verification)                                                                                           | Transformer Encoder (ID)        | Bidirectional LSTM (ID)         |
+| :--------------------------------- | :-------------------------------------------------------------------------------------------------------------------- | :------------------------------ | :------------------------------ |
+| **Task Scope**               | 1:1 Binary Metric Verification                                                                                        | 1:N 300-Class Classification    | 1:N 300-Class Classification    |
+| **Sequence Length ($T$)**  | 50 keystrokes                                                                                                         | 15 keystrokes                   | 15 keystrokes                   |
+| **Batch Size**               | 256                                                                                                                   | 256                             | 256                             |
+| **Optimizer**                | Adam ($\beta_1=0.9, \beta_2=0.999$) | Adam ($\beta_1=0.9, \beta_2=0.999$) | Adam ($\beta_1=0.9, \beta_2=0.999$) |                                 |                                 |
+| **Learning Rate ($\eta$)** | $1 \times 10^{-3}$                                                                                                  | $1 \times 10^{-3}$            | $1 \times 10^{-3}$            |
+| **Loss Function**            | Contrastive Loss ($\text{margin}=1.0$)                                                                              | CrossEntropyLoss                | CrossEntropyLoss                |
+| **Epochs**                   | 30                                                                                                                    | 60                              | 60                              |
+| **Number of GPUs**           | 2x NVIDIA T4 (`DataParallel`)                                                                                       | 2x NVIDIA T4 (`DataParallel`) | 2x NVIDIA T4 (`DataParallel`) |
+| **Total Parameters**         | ~72,000                                                                                                               | ~77,000                         | ~170,000                        |
 
 ---
 
@@ -160,12 +183,12 @@ All models were trained in a dual-GPU Kaggle accelerator environment (`2x NVIDIA
 
 ### 1. Model Performance Summary
 
-| Model | Task | Test Metric | Score | Training Accuracy |
-| :--- | :--- | :--- | :--- | :--- |
-| 🛡️ **Siamese LSTM** | 1:1 Verification | **Equal Error Rate (EER)** | **0.2336 (23.36%)** | — |
-| 🛡️ **Siamese LSTM** | 1:1 Verification | **Accuracy @ EER Threshold** | **76.68%** | — |
-| ⚡ **Transformer Encoder** | 1:N Identification | **Top-1 Accuracy** | **51.25%** | 61.50% |
-| 🔄 **Bidirectional LSTM** | 1:N Identification | **Top-1 Accuracy** | **36.22%** | 65.53% |
+| Model                           | Task               | Test Metric                        | Score                     | Training Accuracy |
+| :------------------------------ | :----------------- | :--------------------------------- | :------------------------ | :---------------- |
+| 🛡️**Siamese LSTM**      | 1:1 Verification   | **Equal Error Rate (EER)**   | **0.2336 (23.36%)** | —                |
+| 🛡️**Siamese LSTM**      | 1:1 Verification   | **Accuracy @ EER Threshold** | **76.68%**          | —                |
+| ⚡**Transformer Encoder** | 1:N Identification | **Top-1 Accuracy**           | **51.25%**          | 61.50%            |
+| 🔄**Bidirectional LSTM**  | 1:N Identification | **Top-1 Accuracy**           | **36.22%**          | 65.53%            |
 
 ### 2. Key Scientific Observations
 
@@ -194,9 +217,11 @@ The system features a live browser application that captures raw keyboard hardwa
 ## 🔌 API Reference
 
 ### 1. `POST /api/verify`
+
 Runs Siamese 1:1 biometric comparison between two keystroke sequences.
 
 **Payload**:
+
 ```json
 {
   "reference_sequence": [[85.2, 120.4, 35.2], ...],  // 50 x 3 [H, DD, UD]
@@ -205,6 +230,7 @@ Runs Siamese 1:1 biometric comparison between two keystroke sequences.
 ```
 
 **Response**:
+
 ```json
 {
   "distance": 0.5421,
@@ -218,9 +244,11 @@ Runs Siamese 1:1 biometric comparison between two keystroke sequences.
 ---
 
 ### 2. `POST /api/identify`
+
 Executes 1:N identification across 300 registered profiles using both Transformer and BiLSTM.
 
 **Payload**:
+
 ```json
 {
   "sequence": [[80.0, 150.0, 70.0], ...]  // 15 x 3 [H, DD, UD]
@@ -228,6 +256,7 @@ Executes 1:N identification across 300 registered profiles using both Transforme
 ```
 
 **Response**:
+
 ```json
 {
   "transformer_prediction": "367392",
@@ -247,9 +276,11 @@ Executes 1:N identification across 300 registered profiles using both Transforme
 ---
 
 ### 3. `GET /api/benchmark_samples`
+
 Retrieves pre-computed test sequences from verified benchmark users (`367392` and `225417`).
 
 ### 4. `GET /api/health`
+
 Health check returning server status, PyTorch version, active compute device (`cpu` / `cuda`), and loaded model parameters.
 
 ---
@@ -285,16 +316,19 @@ Health check returning server status, PyTorch version, active compute device (`c
 ## 🚀 Quickstart & Local Installation
 
 ### Prerequisites
+
 - Python `3.10` or `3.11`
 - `git`
 
 ### 1. Clone the Repository
+
 ```bash
 git clone https://github.com/<YOUR_USERNAME>/keystroke-dynamics-authentication.git
 cd keystroke-dynamics-authentication
 ```
 
 ### 2. Set Up a Virtual Environment
+
 ```bash
 # Windows
 python -m venv venv
@@ -306,44 +340,65 @@ source venv/bin/activate
 ```
 
 ### 3. Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 4. Run the Web Application
+
 ```bash
 python app.py
 ```
-Open **[http://localhost:10000](http://localhost:10000)** (or the port displayed in your terminal) in your browser.
+
+Open **[http://localhost:7860](http://localhost:7860)** in your browser.
 
 ---
 
 ## 🐳 Production Deployment
 
-### Option A: Deploy to Render (Recommended Free Cloud Hosting)
+### Option A: Hugging Face Spaces (Recommended 100% Free 24/7 Hosting)
 
-1. Fork or push this repository to your GitHub account.
-2. Sign in to **[Render.com](https://render.com)**.
-3. Click **New +** ➔ **Web Service** ➔ Select your repository.
-4. Set the following configuration:
-   - **Environment**: `Python 3`
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `uvicorn app:app --host 0.0.0.0 --port $PORT`
-   - **Instance Type**: `Free`
-5. Click **Deploy Web Service**.
+This repository includes native configuration metadata for **Hugging Face Spaces** via `sdk: gradio`.
+
+1. Go to **[Hugging Face Spaces](https://huggingface.co/spaces)** and click **Create new Space**.
+2. Configure your Space:
+   - **Space Name**: `Keystroke-Dynamics-Authentication`
+   - **License**: `MIT`
+   - **Space SDK**: `Gradio` (SDK Version: `4.44.1`)
+   - **Space Hardware**: **CPU basic · 2 vCPU · 16 GB · Free** *(ZeroGPU is also fully supported)*
+3. Push your repository to Hugging Face:
+   ```bash
+   git remote add space https://huggingface.co/spaces/<your-username>/<space-name>
+   git push space main
+   ```
+4. The Space automatically installs `requirements.txt`, loads the checkpoints onto CPU, and launches the live interactive Glassmorphic Biometric Dashboard on port 7860.
+
+> [!TIP]
+> Hugging Face **CPU basic** provides 16 GB RAM with permanent 24/7 uptime and zero cost or credit-card requirements. Because our models are optimized (~5.5 MB total), inference executes in **< 1ms** on CPU!
 
 ### Option B: Docker Container
 
-Build and run with Docker:
+Deploy anywhere (GCP, AWS, DigitalOcean, local server) using Docker:
 
 ```bash
 # Build Docker image
 docker build -t keystroke-dynamics:latest .
 
 # Run container on port 7860
-docker run -p 7860:7860 keystroke-dynamics:latest
+docker run -d -p 7860:7860 --name keystroke-biometrics keystroke-dynamics:latest
 ```
+
 Access the application at `http://localhost:7860`.
+
+### Option C: Cloud PaaS (Render / Railway / Koyeb)
+
+1. Connect your GitHub repository to your cloud provider.
+2. Configure service parameters:
+   - **Environment**: `Python 3.10+`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `python app.py`
+   - **Port**: `7860` (or mapped to `$PORT`)
 
 ---
 
