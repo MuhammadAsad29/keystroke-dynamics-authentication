@@ -402,6 +402,8 @@ Access the application at `http://localhost:7860`.
 
 ---
 
+## 🔗 Live Demo: https://huggingface.co/spaces/M-Asad29/Keystroke-Dynamics-Authentication
+
 ## 📚 Citation & References
 
 - **Dataset**: Dhakal, V., Feit, A. M., Kristensson, P. O., & Oulasvirta, A. (2018). *Observations on Typing from 136 Million Keystrokes*. ACM CHI Conference on Human Factors in Computing Systems. [https://userinterfaces.aalto.fi/136Mkeystrokes/](https://userinterfaces.aalto.fi/136Mkeystrokes/)
